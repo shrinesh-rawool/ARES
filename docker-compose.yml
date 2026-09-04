@@ -1,0 +1,44 @@
+networks:
+  amr_mesh:
+    driver: bridge
+
+services:
+  # warehouse_sim is running on the host machine via Pygame
+  amr_1:
+    build:
+      context: .
+      dockerfile: Dockerfile.amr
+    container_name: amr_1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - WAREHOUSE_ADDR=tcp://host.docker.internal:5555
+    command: python amr/amr_node.py amr_1 1 14 28 14 6001 "tcp://amr_2:6002,tcp://amr_3:6003"
+    networks:
+      - amr_mesh
+
+  amr_2:
+    build:
+      context: .
+      dockerfile: Dockerfile.amr
+    container_name: amr_2
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - WAREHOUSE_ADDR=tcp://host.docker.internal:5555
+    command: python amr/amr_node.py amr_2 14 1 14 28 6002 "tcp://amr_1:6001,tcp://amr_3:6003"
+    networks:
+      - amr_mesh
+
+  amr_3:
+    build:
+      context: .
+      dockerfile: Dockerfile.amr
+    container_name: amr_3
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - WAREHOUSE_ADDR=tcp://host.docker.internal:5555
+    command: python amr/amr_node.py amr_3 28 14 1 14 6003 "tcp://amr_1:6001,tcp://amr_2:6002"
+    networks:
+      - amr_mesh
