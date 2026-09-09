@@ -3,11 +3,15 @@ networks:
     driver: bridge
 
 services:
+  # Headless physics server inside Docker (optional profile)
+  # Run `docker compose --profile headless up` if you do not run the GUI on host.
   warehouse_sim:
     build:
       context: .
       dockerfile: Dockerfile.warehouse
     container_name: warehouse_sim
+    profiles:
+      - headless
     environment:
       - PYTHONUNBUFFERED=1
     ports:
@@ -20,11 +24,11 @@ services:
       context: .
       dockerfile: Dockerfile.amr
     container_name: amr_1
-    depends_on:
-      - warehouse_sim
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - PYTHONUNBUFFERED=1
-      - WAREHOUSE_ADDR=tcp://warehouse_sim:5555
+      - WAREHOUSE_ADDR=${WAREHOUSE_ADDR:-tcp://host.docker.internal:5555}
     command: python amr/amr_node.py amr_1 1 14 28 14 6001 "tcp://amr_2:6002,tcp://amr_3:6003"
     networks:
       - amr_mesh
@@ -34,11 +38,11 @@ services:
       context: .
       dockerfile: Dockerfile.amr
     container_name: amr_2
-    depends_on:
-      - warehouse_sim
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - PYTHONUNBUFFERED=1
-      - WAREHOUSE_ADDR=tcp://warehouse_sim:5555
+      - WAREHOUSE_ADDR=${WAREHOUSE_ADDR:-tcp://host.docker.internal:5555}
     command: python amr/amr_node.py amr_2 14 1 14 28 6002 "tcp://amr_1:6001,tcp://amr_3:6003"
     networks:
       - amr_mesh
@@ -48,11 +52,11 @@ services:
       context: .
       dockerfile: Dockerfile.amr
     container_name: amr_3
-    depends_on:
-      - warehouse_sim
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - PYTHONUNBUFFERED=1
-      - WAREHOUSE_ADDR=tcp://warehouse_sim:5555
+      - WAREHOUSE_ADDR=${WAREHOUSE_ADDR:-tcp://host.docker.internal:5555}
     command: python amr/amr_node.py amr_3 28 14 1 14 6003 "tcp://amr_1:6001,tcp://amr_2:6002"
     networks:
       - amr_mesh
