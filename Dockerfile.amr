@@ -4,9 +4,11 @@ WORKDIR /app
 
 ENV PYTHONPATH=/app
 
-RUN pip install pyzmq
+RUN pip install --no-cache-dir pyzmq numpy torch --extra-index-url https://download.pytorch.org/whl/cpu
 
 COPY amr/ /app/amr/
 COPY core/ /app/core/
+COPY marl/ /app/marl/
+COPY mappo_actor.pt /app/mappo_actor.pt
 
 CMD ["python"]
