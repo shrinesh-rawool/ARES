@@ -235,7 +235,7 @@ class AMRNode:
         payload = 1.0 if self.has_payload else 0.0
         self_state = np.array([dx_goal, dy_goal, dist_goal, payload], dtype=np.float32)
 
-        # 3. Peer features (8 dims)
+        # 3. Peer features (16 dims: up to 4 peers x 4 dims)
         peer_features = []
         my_dist = abs(gx - cx) + abs(gy - cy)
         sorted_peers = sorted(
@@ -243,7 +243,7 @@ class AMRNode:
             key=lambda p: abs(p["pos"][0] - cx) + abs(p["pos"][1] - cy)
         )
 
-        for p_info in sorted_peers[:2]:
+        for p_info in sorted_peers[:4]:
             px, py = p_info["pos"]
             p_dist_to_goal = p_info.get("dist_to_goal", 999)
             p_dx = (px - cx) / 30.0
@@ -252,7 +252,7 @@ class AMRNode:
             has_prio = 1.0 if self.has_higher_priority(p_info.get("robot_id", "peer"), p_dist_to_goal) else 0.0
             peer_features.extend([p_dx, p_dy, p_norm_dist, has_prio])
 
-        while len(peer_features) < 8:
+        while len(peer_features) < 16:
             peer_features.extend([0.0, 0.0, 1.0, 0.0])
 
         return np.concatenate([patch.flatten(), self_state, np.array(peer_features, dtype=np.float32)])

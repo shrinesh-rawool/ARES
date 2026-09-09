@@ -91,10 +91,10 @@ class MAPPOAgent:
 
     def __init__(
         self,
-        obs_dim: int,
+        obs_dim: int = 45,
         action_dim: int = 5,
-        state_dim: int = 111,
-        num_agents: int = 3,
+        state_dim: int = 225,
+        num_agents: int = 5,
         lr_actor: float = 3e-4,
         lr_critic: float = 1e-3,
         clip_param: float = 0.2,

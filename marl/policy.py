@@ -30,7 +30,7 @@ class MAPPOPolicy:
 
     def __init__(
         self,
-        obs_dim: int = 37,
+        obs_dim: int = 45,
         action_dim: int = 5,
         model_path: Optional[str] = "mappo_actor.pt",
         device: str = "cpu",
