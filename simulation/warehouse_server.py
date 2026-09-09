@@ -2,9 +2,15 @@
 simulation/warehouse_server.py
 Central physics and environment simulation engine.
 """
+import os
+import sys
 import time
 import zmq
 import json
+
+# Ensure repository root is on sys.path when executed directly
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from core.grid import WarehouseGrid
 
 class WarehouseSimServer:

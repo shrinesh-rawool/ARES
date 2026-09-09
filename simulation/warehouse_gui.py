@@ -3,7 +3,12 @@ simulation/warehouse_gui.py
 Pygame Visualizer with Goal Reticles and Package Indicators.
 """
 
+import os
 import sys
+
+# Ensure repository root is on sys.path when executed directly
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 import zmq
 import pygame
 from typing import Dict, Tuple

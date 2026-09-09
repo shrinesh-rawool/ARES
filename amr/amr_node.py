@@ -5,6 +5,10 @@ Autonomous edge node with Dynamic Aisle Obstruction Discovery & P2P Costmap Shar
 
 import os
 import sys
+
+# Ensure repository root is on sys.path when executed directly
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 import time
 import json
 from typing import Dict, List, Optional, Tuple, Set
