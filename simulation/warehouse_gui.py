@@ -100,13 +100,19 @@ class WarehouseSimulation:
                         self.robots[robot_id] = {}
                     self.robots[robot_id]["pos"] = (nx, ny)
 
-                if robot_id in self.robots:
+                if robot_id not in self.robots:
+                    self.robots[robot_id] = {
+                        "pos": (nx, ny) if not collision else (0, 0),
+                        "goal": goal,
+                        "has_payload": has_payload,
+                    }
+                else:
                     self.robots[robot_id]["goal"] = goal
                     self.robots[robot_id]["has_payload"] = has_payload
 
                 response = {
                     "status": "OK",
-                    "current_pos": self.robots[robot_id]["pos"],
+                    "current_pos": self.robots[robot_id].get("pos", (nx, ny)),
                     "collision": collision,
                     "static_map": list(self.grid.static_obstacles),
                 }
@@ -199,7 +205,9 @@ class WarehouseSimulation:
                 elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     mx, my = pygame.mouse.get_pos()
                     gx, gy = mx // CELL_SIZE, my // CELL_SIZE
-                    if (gx, gy) in self.grid.all_obstacles:
+                    if (gx, gy) in self.grid.static_obstacles:
+                        pass  # Do not modify permanent static shelves/walls
+                    elif (gx, gy) in self.grid.all_obstacles:
                         self.grid.remove_obstacle(gx, gy)
                     else:
                         self.grid.add_obstacle(gx, gy)
