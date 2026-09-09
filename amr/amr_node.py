@@ -8,8 +8,16 @@ import sys
 import time
 import json
 from typing import Dict, List, Optional, Tuple, Set
+import numpy as np
 import zmq
 from core.planner import SpaceTimeAStar
+
+try:
+    from marl.policy import MAPPOPolicy
+    HAS_MARL = True
+except ImportError:
+    HAS_MARL = False
+    MAPPOPolicy = None
 
 
 class AMRNode:
@@ -23,6 +31,7 @@ class AMRNode:
         warehouse_addr: str,
         pub_port: int,
         peer_addrs: list,
+        use_marl: bool = True,
     ):
         self.robot_id = robot_id
         self.init_pos = (init_x, init_y)
@@ -57,6 +66,13 @@ class AMRNode:
         self.dynamic_obstacles: Set[Tuple[int, int]] = set()
         self.blocked_cell_attempts: Dict[Tuple[int, int], int] = {}
         self.yield_hold_ticks: int = 0
+
+        # MAPPO policy initialization
+        self.policy = None
+        if use_marl and HAS_MARL:
+            model_candidate = "models/mappo_actor.pt" if os.path.exists("models/mappo_actor.pt") else "mappo_actor.pt"
+            self.policy = MAPPOPolicy(model_path=model_candidate)
+            print(f"[{self.robot_id}] MAPPO MARL policy loaded (has_weights={self.policy.has_weights})")
 
         self._register_with_warehouse(init_x, init_y)
 
@@ -189,6 +205,58 @@ class AMRNode:
             return (nx, ny)
         return None
 
+    def get_local_observation(self) -> np.ndarray:
+        """Construct 37-dim local observation vector for MARL policy inference."""
+        cx, cy = self.pos
+        gx, gy = self.goal
+
+        # 1. 5x5 occupancy grid (25 dims)
+        patch = np.zeros((5, 5), dtype=np.float32)
+        peer_occupied = {p_info["pos"] for p_info in self.peer_states.values() if "pos" in p_info}
+
+        for dy_idx, dy in enumerate(range(-2, 3)):
+            for dx_idx, dx in enumerate(range(-2, 3)):
+                nx = cx + dx
+                ny = cy + dy
+                coord = (nx, ny)
+                if not (0 <= nx < 30 and 0 <= ny < 30):
+                    patch[dy_idx, dx_idx] = 1.0
+                elif coord in self.static_obstacles:
+                    patch[dy_idx, dx_idx] = 1.0
+                elif coord in self.dynamic_obstacles:
+                    patch[dy_idx, dx_idx] = 2.0 / 3.0
+                elif coord in peer_occupied:
+                    patch[dy_idx, dx_idx] = 1.0
+
+        # 2. Self state (4 dims)
+        dx_goal = (gx - cx) / 30.0
+        dy_goal = (gy - cy) / 30.0
+        dist_goal = (abs(gx - cx) + abs(gy - cy)) / 60.0
+        payload = 1.0 if self.has_payload else 0.0
+        self_state = np.array([dx_goal, dy_goal, dist_goal, payload], dtype=np.float32)
+
+        # 3. Peer features (8 dims)
+        peer_features = []
+        my_dist = abs(gx - cx) + abs(gy - cy)
+        sorted_peers = sorted(
+            [p for p in self.peer_states.values() if "pos" in p],
+            key=lambda p: abs(p["pos"][0] - cx) + abs(p["pos"][1] - cy)
+        )
+
+        for p_info in sorted_peers[:2]:
+            px, py = p_info["pos"]
+            p_dist_to_goal = p_info.get("dist_to_goal", 999)
+            p_dx = (px - cx) / 30.0
+            p_dy = (py - cy) / 30.0
+            p_norm_dist = p_dist_to_goal / 60.0
+            has_prio = 1.0 if self.has_higher_priority(p_info.get("robot_id", "peer"), p_dist_to_goal) else 0.0
+            peer_features.extend([p_dx, p_dy, p_norm_dist, has_prio])
+
+        while len(peer_features) < 8:
+            peer_features.extend([0.0, 0.0, 1.0, 0.0])
+
+        return np.concatenate([patch.flatten(), self_state, np.array(peer_features, dtype=np.float32)])
+
     def step(self, next_x: int, next_y: int) -> bool:
         req = {
             "type": "STEP",
@@ -252,19 +320,40 @@ class AMRNode:
 
             next_coord = self.planned_path[0]
 
-            # Peer priority arbitration
+            # Peer priority arbitration (MARL policy with heuristic fallback)
             yield_needed = False
-            for p_id, p_info in self.peer_states.items():
-                p_pos = p_info.get("pos")
-                if not p_pos:
-                    continue
+            peer_conflict = any(
+                abs(self.pos[0] - p_info["pos"][0]) + abs(self.pos[1] - p_info["pos"][1]) <= 2
+                for p_info in self.peer_states.values() if "pos" in p_info
+            )
 
-                dist_to_peer = abs(self.pos[0] - p_pos[0]) + abs(self.pos[1] - p_pos[1])
-                if dist_to_peer <= 2:
-                    peer_dist = p_info.get("dist_to_goal", 999)
-                    if not self.has_higher_priority(p_id, peer_dist):
+            if peer_conflict and self.policy is not None:
+                obs = self.get_local_observation()
+                marl_action = self.policy.get_action(obs, deterministic=True)
+                if marl_action == MAPPOPolicy.ACTION_YIELD or marl_action == MAPPOPolicy.ACTION_HALT:
+                    yield_needed = True
+                elif marl_action == MAPPOPolicy.ACTION_SIDESTEP:
+                    sidestep_coord = self.find_sidestep_cell()
+                    if sidestep_coord and self.step(sidestep_coord[0], sidestep_coord[1]):
+                        print(f"[{self.robot_id}] MARL MAPPO: Sidestepped to {sidestep_coord} to clear passage.")
+                        self.yield_hold_ticks = 3
+                        self.replan_path()
+                        time.sleep(0.4)
+                        continue
+                    else:
                         yield_needed = True
-                        break
+            elif peer_conflict:
+                # Rule-based priority fallback
+                for p_id, p_info in self.peer_states.items():
+                    p_pos = p_info.get("pos")
+                    if not p_pos:
+                        continue
+                    dist_to_peer = abs(self.pos[0] - p_pos[0]) + abs(self.pos[1] - p_pos[1])
+                    if dist_to_peer <= 2:
+                        peer_dist = p_info.get("dist_to_goal", 999)
+                        if not self.has_higher_priority(p_id, peer_dist):
+                            yield_needed = True
+                            break
 
             if yield_needed:
                 if self.yield_hold_ticks > 0:
