@@ -2,9 +2,15 @@
 simulation/warehouse_server.py
 Central physics and environment simulation engine.
 """
+import os
+import sys
 import time
 import zmq
 import json
+
+# Ensure repository root is on sys.path when executed directly
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from core.grid import WarehouseGrid
 
 class WarehouseSimServer:
@@ -47,6 +53,9 @@ class WarehouseSimServer:
                 else:
                     collision = True
 
+                if robot_id not in self.robot_positions:
+                    self.robot_positions[robot_id] = (next_x, next_y) if (is_cell_free and not is_occupied) else (0, 0)
+
                 reply = {
                     "status": "OK",
                     "current_pos": self.robot_positions[robot_id],
@@ -55,9 +64,14 @@ class WarehouseSimServer:
                 }
 
             elif msg_type == "INJECT_OBSTACLE":
-                ox, oy = message["x"], message["y"]
+                ox, oy = int(message["x"]), int(message["y"])
                 self.grid.add_obstacle(ox, oy)
                 reply = {"status": "OBSTACLE_ADDED", "pos": (ox, oy)}
+
+            elif msg_type == "REMOVE_OBSTACLE":
+                ox, oy = int(message["x"]), int(message["y"])
+                self.grid.remove_obstacle(ox, oy)
+                reply = {"status": "OBSTACLE_REMOVED", "pos": (ox, oy)}
 
             else:
                 reply = {"status": "UNKNOWN_COMMAND"}

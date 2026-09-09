@@ -50,7 +50,8 @@ class WarehouseGrid:
         self._dynamic.clear()
 
     def add_obstacle(self, x: int, y: int) -> None:
-        self._dynamic.add((x, y))
+        if (x, y) not in self._static:
+            self._dynamic.add((x, y))
 
     def remove_obstacle(self, x: int, y: int) -> None:
         self._dynamic.discard((x, y))
